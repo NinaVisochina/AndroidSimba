@@ -68,30 +68,46 @@ namespace WebSimba.Controllers
 
         // PUT: api/Category/2
         [HttpPut("{id}")]
-        public async Task<IActionResult> PutCategory(int id, CategoryEntity category)
+        public async Task<IActionResult> EditCategory(int id, [FromForm] CategoryEditModel model)
         {
-            if (id != category.Id)
+            var category = await _context.Categories.FindAsync(id);
+            if (category == null)
             {
-                return BadRequest();
+                return NotFound();
             }
 
-            _context.Entry(category).State = EntityState.Modified;
+            // Мапимо модель редагування на сутність
+            mapper.Map(model, category);
 
-            try
+            // Якщо надіслано новий файл зображення
+            if (model.ImageFile != null)
             {
-                await _context.SaveChangesAsync();
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                if (!CategoryExists(id))
+                // Генеруємо ім'я файлу
+                string imageName = Guid.NewGuid().ToString() + ".jpg";
+                var dir = configuration["ImageDir"];
+                var fileSave = Path.Combine(Directory.GetCurrentDirectory(), dir, imageName);
+
+                // Зберігаємо нове зображення
+                using (var stream = new FileStream(fileSave, FileMode.Create))
+                    await model.ImageFile.CopyToAsync(stream);
+
+                // Видаляємо старе зображення, якщо існує
+                if (!string.IsNullOrEmpty(category.Image))
                 {
-                    return NotFound();
+                    var oldImagePath = Path.Combine(Directory.GetCurrentDirectory(), dir, category.Image);
+                    if (System.IO.File.Exists(oldImagePath))
+                    {
+                        System.IO.File.Delete(oldImagePath);
+                    }
                 }
-                else
-                {
-                    throw;
-                }
+
+                // Оновлюємо поле Image у сутності
+                category.Image = imageName;
             }
+
+            _context.Categories.Update(category);
+            await _context.SaveChangesAsync();
+
             return NoContent();
         }
 

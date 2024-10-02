@@ -16,6 +16,9 @@ namespace WebSimba.Mapper
 
             CreateMap<CategoryCreateModel, CategoryEntity>()
                 .ForMember(x => x.Image, opt => opt.Ignore());
+
+            CreateMap<CategoryEditModel, CategoryEntity>()
+                .ForMember(x => x.Image, opt => opt.Condition((src, dest, srcMember) => src.ImageFile != null));
         }
     }
 }
