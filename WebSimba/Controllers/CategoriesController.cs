@@ -121,11 +121,32 @@ namespace WebSimba.Controllers
                 return NotFound();
             }
 
+            // Якщо категорія має зображення, видаляємо його з файлової системи
+            if (!string.IsNullOrEmpty(category.Image))
+            {
+                var imagePath = Path.Combine(Directory.GetCurrentDirectory(), configuration["ImageDir"], category.Image);
+
+                if (System.IO.File.Exists(imagePath))
+                {
+                    try
+                    {
+                        System.IO.File.Delete(imagePath); // Видаляємо файл зображення
+                    }
+                    catch (Exception ex)
+                    {
+                        return StatusCode(StatusCodes.Status500InternalServerError, $"Error deleting image: {ex.Message}");
+                    }
+                }
+            }
+
+            // Видаляємо категорію з бази даних
             _context.Categories.Remove(category);
             await _context.SaveChangesAsync();
 
             return NoContent();
         }
+
+
 
         private bool CategoryExists(int id)
         {
