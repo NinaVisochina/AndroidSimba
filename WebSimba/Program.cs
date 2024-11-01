@@ -7,25 +7,24 @@ using WebSimba.Mapper;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
+// Додайте послугу для роботи з PostgreSQL замість SQLite
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
-    options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")));
-
+    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection"))); // <-- змінено на UseNpgsql
+builder.Services.AddCors();
 builder.Services.AddAutoMapper(typeof(AppMapperProfile));
 
 builder.Services.AddControllers();
-// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
+// Налаштування Swagger
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
+app.UseCors(opt =>
+    opt.AllowAnyHeader().AllowAnyMethod().AllowAnyOrigin());
 
-// Configure the HTTP request pipeline.
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
+// Налаштування Swagger
+app.UseSwagger();
+app.UseSwaggerUI();
 
 app.UseAuthorization();
 
@@ -37,13 +36,13 @@ var dirPath = Path.Combine(Directory.GetCurrentDirectory(), dir);
 if (!Directory.Exists(dirPath))
     Directory.CreateDirectory(dirPath);
 
-//app.UseStaticFiles();
 app.UseStaticFiles(new StaticFileOptions
 {
     FileProvider = new PhysicalFileProvider(dirPath),
     RequestPath = "/images"
 });
 
+// Якщо зображення "noimage.jpg" не існує, завантажте його
 var imageNo = Path.Combine(dirPath, "noimage.jpg");
 if (!File.Exists(imageNo))
 {
@@ -52,13 +51,9 @@ if (!File.Exists(imageNo))
     {
         using (HttpClient client = new HttpClient())
         {
-            // Send a GET request to the image URL
             HttpResponseMessage response = client.GetAsync(url).Result;
-
-            // Check if the response status code indicates success (e.g., 200 OK)
             if (response.IsSuccessStatusCode)
             {
-                // Read the image bytes from the response content
                 byte[] imageBytes = response.Content.ReadAsByteArrayAsync().Result;
                 File.WriteAllBytes(imageNo, imageBytes);
             }
@@ -74,11 +69,11 @@ if (!File.Exists(imageNo))
     }
 }
 
-//Dependecy Injection
+// Ініціалізація бази даних
 using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-    dbContext.Database.Migrate(); //??????? ???????? ?? ??, ???? ?? ??? ?????
+    //dbContext.Database.Migrate(); // Автоматично застосовує міграції
 
     if (!dbContext.Categories.Any())
     {
