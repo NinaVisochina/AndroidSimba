@@ -4,7 +4,7 @@
     {
         //Назва категорії
         public string Name { get; set; } = string.Empty;
-        //Файл із фото
+        //Файл із фотоф
         public IFormFile? Image { get; set; }
     }
 }
