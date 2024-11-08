@@ -68,46 +68,30 @@ namespace WebSimba.Controllers
 
         // PUT: api/Category/2
         [HttpPut("{id}")]
-        public async Task<IActionResult> EditCategory(int id, [FromForm] CategoryEditModel model)
+        public async Task<IActionResult> PutCategory(int id, CategoryEntity category)
         {
-            var category = await _context.Categories.FindAsync(id);
-            if (category == null)
+            if (id != category.Id)
             {
-                return NotFound();
+                return BadRequest();
             }
 
-            // Мапимо модель редагування на сутність
-            mapper.Map(model, category);
+            _context.Entry(category).State = EntityState.Modified;
 
-            // Якщо надіслано новий файл зображення
-            if (model.ImageFile != null)
+            try
             {
-                // Генеруємо ім'я файлу
-                string imageName = Guid.NewGuid().ToString() + ".jpg";
-                var dir = configuration["ImageDir"];
-                var fileSave = Path.Combine(Directory.GetCurrentDirectory(), dir, imageName);
-
-                // Зберігаємо нове зображення
-                using (var stream = new FileStream(fileSave, FileMode.Create))
-                    await model.ImageFile.CopyToAsync(stream);
-
-                // Видаляємо старе зображення, якщо існує
-                if (!string.IsNullOrEmpty(category.Image))
+                await _context.SaveChangesAsync();
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                if (!CategoryExists(id))
                 {
-                    var oldImagePath = Path.Combine(Directory.GetCurrentDirectory(), dir, category.Image);
-                    if (System.IO.File.Exists(oldImagePath))
-                    {
-                        System.IO.File.Delete(oldImagePath);
-                    }
+                    return NotFound();
                 }
-
-                // Оновлюємо поле Image у сутності
-                category.Image = imageName;
+                else
+                {
+                    throw;
+                }
             }
-
-            _context.Categories.Update(category);
-            await _context.SaveChangesAsync();
-
             return NoContent();
         }
 
@@ -121,32 +105,11 @@ namespace WebSimba.Controllers
                 return NotFound();
             }
 
-            // Якщо категорія має зображення, видаляємо його з файлової системи
-            if (!string.IsNullOrEmpty(category.Image))
-            {
-                var imagePath = Path.Combine(Directory.GetCurrentDirectory(), configuration["ImageDir"], category.Image);
-
-                if (System.IO.File.Exists(imagePath))
-                {
-                    try
-                    {
-                        System.IO.File.Delete(imagePath); // Видаляємо файл зображення
-                    }
-                    catch (Exception ex)
-                    {
-                        return StatusCode(StatusCodes.Status500InternalServerError, $"Error deleting image: {ex.Message}");
-                    }
-                }
-            }
-
-            // Видаляємо категорію з бази даних
             _context.Categories.Remove(category);
             await _context.SaveChangesAsync();
 
             return NoContent();
         }
-
-
 
         private bool CategoryExists(int id)
         {

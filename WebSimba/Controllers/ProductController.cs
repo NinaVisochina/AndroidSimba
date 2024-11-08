@@ -42,57 +42,91 @@ namespace WebSimba.Controllers
         [HttpPost]
         public async Task<IActionResult> PostProduct([FromForm] ProductCreateModel model)
         {
-            string imageName = String.Empty;
-            if (model.Image != null)
-            {
-                imageName = Guid.NewGuid().ToString() + ".jpg";
-                var dir = configuration["ImageDir"];
-                var fileSave = Path.Combine(Directory.GetCurrentDirectory(), dir, imageName);
-                using (var stream = new FileStream(fileSave, FileMode.Create))
-                    await model.Image.CopyToAsync(stream);
-            }
-
             var entity = mapper.Map<ProductEntity>(model);
-            entity.Image = imageName;
             _context.Products.Add(entity);
             await _context.SaveChangesAsync();
+
+            if (model.Images != null && model.Images.Any())
+            {
+                foreach (var image in model.Images)
+                {
+                    string imageName = Guid.NewGuid() + Path.GetExtension(image.FileName);
+                    var dir = configuration["ImageDir"];
+                    var fileSave = Path.Combine(Directory.GetCurrentDirectory(), dir, imageName);
+
+                    using (var stream = new FileStream(fileSave, FileMode.Create))
+                        await image.CopyToAsync(stream);
+
+                    var productImage = new ProductImageEntity
+                    {
+                        ProductId = entity.Id,
+                        Image = imageName
+                    };
+                    _context.ProductImages.Add(productImage);
+                }
+                await _context.SaveChangesAsync();
+            }
+
             return Ok(entity.Id);
         }
+
 
         // PUT: api/Product/2
         [HttpPut("{id}")]
         public async Task<IActionResult> EditProduct(int id, [FromForm] ProductEditModel model)
         {
-            var product = await _context.Products.FindAsync(id);
+            var product = await _context.Products
+                .Include(p => p.Images) // Завантажуємо всі зображення продукту
+                .FirstOrDefaultAsync(p => p.Id == id);
+
             if (product == null)
             {
                 return NotFound();
             }
 
-            // Мапимо модель редагування на сутність
+            // Мапимо основні поля з моделі редагування на сутність продукту
             mapper.Map(model, product);
 
-            // Якщо надіслано новий файл зображення
-            if (model.ImageFile != null)
+            var dir = configuration["ImageDir"];
+            var dirPath = Path.Combine(Directory.GetCurrentDirectory(), dir);
+
+            // Додаємо нові зображення, якщо вони надані
+            if (model.Images != null && model.Images.Any())
             {
-                string imageName = Guid.NewGuid().ToString() + ".jpg";
-                var dir = configuration["ImageDir"];
-                var fileSave = Path.Combine(Directory.GetCurrentDirectory(), dir, imageName);
-
-                using (var stream = new FileStream(fileSave, FileMode.Create))
-                    await model.ImageFile.CopyToAsync(stream);
-
-                // Видаляємо старе зображення, якщо існує
-                if (!string.IsNullOrEmpty(product.Image))
+                foreach (var imageFile in model.Images)
                 {
-                    var oldImagePath = Path.Combine(Directory.GetCurrentDirectory(), dir, product.Image);
-                    if (System.IO.File.Exists(oldImagePath))
-                    {
-                        System.IO.File.Delete(oldImagePath);
-                    }
-                }
+                    string imageName = Guid.NewGuid() + Path.GetExtension(imageFile.FileName);
+                    var fileSave = Path.Combine(dirPath, imageName);
 
-                product.Image = imageName;
+                    using (var stream = new FileStream(fileSave, FileMode.Create))
+                        await imageFile.CopyToAsync(stream);
+
+                    var productImage = new ProductImageEntity
+                    {
+                        ProductId = product.Id,
+                        Image = imageName,
+                        Priority = model.Priority // Можна передавати пріоритет для зображень
+                    };
+                    _context.ProductImages.Add(productImage);
+                }
+            }
+
+            // Видаляємо старі зображення, якщо їх потрібно замінити
+            if (model.RemoveImageIds != null && model.RemoveImageIds.Any())
+            {
+                var imagesToRemove = product.Images
+                    .Where(img => model.RemoveImageIds.Contains(img.Id))
+                    .ToList();
+
+                foreach (var image in imagesToRemove)
+                {
+                    var imagePath = Path.Combine(dirPath, image.Image);
+                    if (System.IO.File.Exists(imagePath))
+                    {
+                        System.IO.File.Delete(imagePath);
+                    }
+                    _context.ProductImages.Remove(image);
+                }
             }
 
             _context.Products.Update(product);
@@ -105,16 +139,22 @@ namespace WebSimba.Controllers
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteProduct(int id)
         {
-            var product = await _context.Products.FindAsync(id);
+            var product = await _context.Products
+                .Include(p => p.Images) // Завантажуємо пов'язані зображення
+                .FirstOrDefaultAsync(p => p.Id == id);
+
             if (product == null)
             {
                 return NotFound();
             }
 
-            // Якщо продукт має зображення, видаляємо його з файлової системи
-            if (!string.IsNullOrEmpty(product.Image))
+            var dir = configuration["ImageDir"];
+            var dirPath = Path.Combine(Directory.GetCurrentDirectory(), dir);
+
+            // Видаляємо всі зображення продукту з файлової системи
+            foreach (var image in product.Images)
             {
-                var imagePath = Path.Combine(Directory.GetCurrentDirectory(), configuration["ImageDir"], product.Image);
+                var imagePath = Path.Combine(dirPath, image.Image);
                 if (System.IO.File.Exists(imagePath))
                 {
                     try
@@ -128,6 +168,7 @@ namespace WebSimba.Controllers
                 }
             }
 
+            // Видаляємо продукт і всі пов'язані з ним зображення
             _context.Products.Remove(product);
             await _context.SaveChangesAsync();
 

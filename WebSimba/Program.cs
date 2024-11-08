@@ -1,50 +1,75 @@
-using Bogus;
+п»їusing Bogus;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.FileProviders;
+using System.Diagnostics;
+using WebSimba.Constants;
 using WebSimba.Data;
 using WebSimba.Data.Entities;
+using WebSimba.Data.Entities.Identity;
+using WebSimba.Interfaces;
 using WebSimba.Mapper;
+using WebSimba.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Налаштування PostgreSQL
+// Add services to the container.
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
-builder.Services.AddCors();
+
+builder.Services.AddIdentity<UserEntity, RoleEntity>(options =>
+{
+    options.Stores.MaxLengthForKeys = 128;
+    options.Password.RequireDigit = false;
+    options.Password.RequiredLength = 5;
+    options.Password.RequireNonAlphanumeric = false;
+    options.Password.RequireUppercase = false;
+    options.Password.RequireLowercase = false;
+})
+    .AddEntityFrameworkStores<ApplicationDbContext>()
+    .AddDefaultTokenProviders();
+
 builder.Services.AddAutoMapper(typeof(AppMapperProfile));
 
-builder.Services.AddControllers();
+builder.Services.AddScoped<IImageWorker, ImageWorker>();
 
-// Налаштування Swagger
+builder.Services.AddControllers();
+// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
+builder.Services.AddCors();
+
 var app = builder.Build();
+
 app.UseCors(opt =>
     opt.AllowAnyHeader().AllowAnyMethod().AllowAnyOrigin());
 
-// Налаштування Swagger
+
+// Configure the HTTP request pipeline.
+//if (app.Environment.IsDevelopment())
+//{
 app.UseSwagger();
 app.UseSwaggerUI();
+//}
 
 app.UseAuthorization();
 
 app.MapControllers();
 
-// Налаштування статичних файлів для зображень
 var dir = builder.Configuration["ImageDir"];
 Console.WriteLine("-------Image dir {0}-------", dir);
 var dirPath = Path.Combine(Directory.GetCurrentDirectory(), dir);
 if (!Directory.Exists(dirPath))
     Directory.CreateDirectory(dirPath);
 
+//app.UseStaticFiles();
 app.UseStaticFiles(new StaticFileOptions
 {
     FileProvider = new PhysicalFileProvider(dirPath),
     RequestPath = "/images"
 });
 
-// Завантаження зображення "noimage.jpg" за замовчуванням, якщо його немає
 var imageNo = Path.Combine(dirPath, "noimage.jpg");
 if (!File.Exists(imageNo))
 {
@@ -53,9 +78,13 @@ if (!File.Exists(imageNo))
     {
         using (HttpClient client = new HttpClient())
         {
+            // Send a GET request to the image URL
             HttpResponseMessage response = client.GetAsync(url).Result;
+
+            // Check if the response status code indicates success (e.g., 200 OK)
             if (response.IsSuccessStatusCode)
             {
+                // Read the image bytes from the response content
                 byte[] imageBytes = response.Content.ReadAsByteArrayAsync().Result;
                 File.WriteAllBytes(imageNo, imageBytes);
             }
@@ -70,57 +99,8 @@ if (!File.Exists(imageNo))
         Console.WriteLine($"-----An error occurred: {ex.Message}------");
     }
 }
-using (var scope = app.Services.CreateScope())
-{
-    var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
 
-    // Ініціалізація бази даних за допомогою Seeder
-    var seeder = new DatabaseSeeder(dbContext);
-    seeder.Seed();
-}
-
-// Ініціалізація бази даних
-using (var scope = app.Services.CreateScope())
-{
-    var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-    //dbContext.Database.Migrate(); // Автоматично застосовує міграції
-
-    // Ініціалізація категорій
-    if (!dbContext.Categories.Any())
-    {
-        const int number = 10;
-        var categories = new Faker("uk").Commerce.Categories(number);
-        foreach (var name in categories)
-        {
-            var entity = dbContext.Categories.SingleOrDefault(c => c.Name == name);
-            if (entity != null)
-                continue;
-
-            entity = new CategoryEntity
-            {
-                Name = name
-            };
-            dbContext.Categories.Add(entity);
-            dbContext.SaveChanges();
-        }
-    }
-
-    //// Ініціалізація продуктів
-    //if (!dbContext.Products.Any())
-    //{
-    //    var productFaker = new Faker<ProductEntity>("uk")
-    //        .RuleFor(p => p.Name, f => f.Commerce.ProductName())
-    //        .RuleFor(p => p.Price, f => decimal.Parse(f.Commerce.Price()))
-    //        .RuleFor(p => p.CategoryId, f => dbContext.Categories
-    //            .OrderBy(c => Guid.NewGuid())
-    //            .Select(c => c.Id)
-    //            .FirstOrDefault())
-    //        .RuleFor(p => p.Image, f => "noimage.jpg"); // Встановлює зображення за замовчуванням
-
-    //    var products = productFaker.Generate(20);
-    //    dbContext.Products.AddRange(products);
-    //    dbContext.SaveChanges();
-    //}
-}
+//Dependecy Injection
+app.SeedData();
 
 app.Run();

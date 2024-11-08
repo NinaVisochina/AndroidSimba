@@ -4,13 +4,9 @@
     {
         public int Id { get; set; }
         public string Name { get; set; } = string.Empty;
+        public string[]? Images { get; set; }
         public decimal Price { get; set; }
-
-        // Шлях до зображення продукту, який сервер повідомляє при читанні
-        public string ImagePath { get; set; } = string.Empty;
-
-        // Інформація про категорію
         public int CategoryId { get; set; }
-        public string CategoryName { get; set; } = string.Empty;
+        public string CategoryName { get; set; } = String.Empty;
     }
 }
